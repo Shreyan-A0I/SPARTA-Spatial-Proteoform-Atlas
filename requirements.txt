@@ -1,0 +1,31 @@
+# SPARTA - Spatial Proteoform Atlas
+# Tech Stack Dependencies
+
+# Data Handling
+pandas>=2.0.0
+numpy>=1.24.0
+h5py>=3.9.0
+
+# Signal Processing & MSI
+pyOpenMS>=2.8.0
+pyimzML>=1.4.0
+
+# Bioinformatics
+biopython>=1.81
+freesasa>=2.1.0
+
+# Frontend & Visualization
+streamlit>=1.28.0
+plotly>=5.17.0
+stmol>=0.0.8
+
+# Statistical Analysis
+scipy>=1.11.0
+
+# Optional: Clustering & Dimensionality Reduction
+scikit-learn>=1.3.0
+umap-learn>=0.5.4
+
+# Optional: Network requests for UniProt/PDB APIs
+requests>=2.31.0
+
