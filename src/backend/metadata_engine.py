@@ -73,53 +73,6 @@ class MetadataEngine:
         no_met = total - self.METHIONINE_MASS if sequence.startswith('M') else total
         return total, no_met
     
-    def fetch_pdb_references(self, uniprot_id: str) -> List[str]:
-        """
-        Fetch PDB structure IDs associated with a UniProt entry.
-        
-        TODO (Task T1): Implement PDB cross-reference extraction
-        - Parse UniProt XML/JSON response
-        - Extract PDB IDs from cross-references
-        - Filter by experimental method (X-ray, Cryo-EM)
-        
-        Args:
-            uniprot_id: UniProt accession number
-            
-        Returns:
-            List of PDB IDs
-        """
-        # Placeholder implementation
-        return []
-    
-    def fetch_alphafold_id(self, uniprot_id: str) -> Optional[str]:
-        """
-        Fetch AlphaFold structure ID for a UniProt entry.
-        
-        TODO (Task T1): Implement AlphaFold DB lookup
-        - Query AlphaFold database
-        - Return structure ID if available
-        
-        Args:
-            uniprot_id: UniProt accession number
-            
-        Returns:
-            AlphaFold structure ID or None
-        """
-        # Placeholder implementation
-        return None
-    
-    def get_protein_metadata(self, uniprot_id: str) -> Optional[ProteinMetadata]:
-        """
-        Retrieve protein metadata from the library.
-        
-        Args:
-            uniprot_id: UniProt accession number
-            
-        Returns:
-            ProteinMetadata object or None if not found
-        """
-        return self.protein_library.get(uniprot_id)
-
     def fetch_proteome(self, taxonomy_id: int, size: int = 500):
         """
         Generalized fetcher for any organism.
@@ -134,7 +87,7 @@ class MetadataEngine:
         # fields: mass (Avg), sequence, pdb, alphafold
         params = {
             "query": f"taxonomy_id:{taxonomy_id} AND reviewed:true",
-            "fields": "accession,id,protein_name,mass,sequence,xref_pdb,xref_alphafolddb,cc_mass_spectrometry",
+            "fields": "accession,id,protein_name,mass,sequence,xref_pdb,xref_alphafolddb",
             "format": "json",
             "size": size,
         }
@@ -210,60 +163,49 @@ class MetadataEngine:
                     })
         return matches
 
-# Example Usage:
-engine = MetadataEngine()
-engine.fetch_proteome(10090) # Mouse
-hits = engine.search_by_mass(8565.0, ppm_tolerance=20.0) # Search for Ubiquitin
-
-import pandas as pd
-from dataclasses import asdict
-
-def export_library_to_excel(engine, filename="SPARTA_Metadata_Sanity_Check.xlsx"):
-    """
-    Converts the Protein Library into a DataFrame and exports to Excel.
-    
-    Processing:
-    - Flattens PDB ID lists into comma-separated strings.
-    - Simplifies MS Comments for spreadsheet readability.
-    """
-    if not engine.protein_library:
-        print("Error: Library is empty. Fetch data before exporting.")
-        return
-
-    # 1. Convert the dictionary of dataclasses into a list of dictionaries
-    raw_data = []
-    for uid, metadata in engine.protein_library.items():
-        # Convert dataclass to dict
-        entry_dict = asdict(metadata)
+    def export_library_to_excel(engine, filename="SPARTA_Metadata_Sanity_Check.xlsx"):
+        """
+        Converts the Protein Library into a DataFrame and exports to Excel.
         
-        # 2. Format lists for Excel (Excel cells don't handle Python lists well)
-        entry_dict['pdb_ids'] = ", ".join(entry_dict['pdb_ids'])
-        
-        # 3. Handle MS Comments (if they exist)
-        if entry_dict.get('ms_comments'):
-            formatted_comments = []
-            for c in entry_dict['ms_comments']:
-                mass = c.get('experimental_mass', 'N/A')
-                note = c.get('note', 'No note')
-                formatted_comments.append(f"[{mass} Da: {note}]")
-            entry_dict['ms_comments'] = "; ".join(formatted_comments)
-        else:
-            entry_dict['ms_comments'] = "No Experimental Evidence"
+        Processing:
+        - Flattens PDB ID lists into comma-separated strings.
+        - Simplifies MS Comments for spreadsheet readability.
+        """
+        if not engine.protein_library:
+            print("Error: Library is empty. Fetch data before exporting.")
+            return
+
+        # 1. Convert the dictionary of dataclasses into a list of dictionaries
+        raw_data = []
+        for uid, metadata in engine.protein_library.items():
+            # Convert dataclass to dict
+            entry_dict = asdict(metadata)
             
-        raw_data.append(entry_dict)
+            # 2. Format lists for Excel (Excel cells don't handle Python lists well)
+            entry_dict['pdb_ids'] = ", ".join(entry_dict['pdb_ids'])
+                
+            raw_data.append(entry_dict)
 
-    # 4. Create DataFrame
-    df = pd.DataFrame(raw_data)
+        # 4. Create DataFrame
+        df = pd.DataFrame(raw_data)
 
-    # 5. Reorder columns for easier "Sanity Checking"
-    cols = [
-        'uniprot_id', 'entry_name', 'protein_name', 
-        'mono_mass', 'mono_mass_no_met', 
-        'avg_mass', 'avg_mass_no_met',
-        'hierarchy_priority', 'pdb_ids', 'alphafold_id', 'ms_comments'
-    ]
-    df = df[cols]
+        # 5. Reorder columns for easier "Sanity Checking"
+        cols = [
+            'uniprot_id', 'entry_name', 'protein_name', 
+            'mono_mass', 'mono_mass_no_met', 
+            'avg_mass', 'avg_mass_no_met',
+            'hierarchy_priority', 'pdb_ids', 'alphafold_id'
+        ]
+        df = df[cols]
 
-    # 6. Export
-    df.to_excel(filename, index=False)
-    print(f"✅ Sanity check file generated: {filename}")
+        # 6. Export
+        df.to_excel(filename, index=False)
+        print(f"✅ Sanity check file generated: {filename}")
+
+
+# # Example Usage:
+# engine = MetadataEngine()
+# engine.fetch_proteome(10090) # Mouse
+# engine.export_library_to_excel()
+# hits = engine.search_by_mass(8565.0, ppm_tolerance=20.0) # Search for Ubiquitin
+# print(hits)
