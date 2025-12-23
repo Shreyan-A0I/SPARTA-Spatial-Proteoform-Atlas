@@ -1,5 +1,5 @@
 """
-Metadata Engine (Phase A: The Blueprint)
+Metadata Engine
 =========================================
 Constructs a theoretical mass library with structural cross-references.
 
@@ -9,20 +9,29 @@ Key Functions:
 - Structural data integration (PDB > AlphaFold priority)
 """
 
+import requests
 import numpy as np
 from typing import Dict, List, Tuple, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
+import pandas as pd
 
 
 @dataclass
 class ProteinMetadata:
     """Stores protein metadata including masses and structural references."""
     uniprot_id: str
+    entry_name: str
+    protein_name: str
     sequence: str
-    theoretical_mass: float  # Full mass including N-terminal Met
-    theoretical_mass_no_met: float  # Mass after N-terminal Met cleavage
-    pdb_ids: List[str]  # PDB structures (X-ray/Cryo-EM)
-    alphafold_id: Optional[str]  # AlphaFold prediction ID
+    # Monoisotopic masses (Calculated from sequence)
+    mono_mass: float
+    mono_mass_no_met: float
+    # Average masses (Fetched from UniProt)
+    avg_mass: float
+    avg_mass_no_met: float
+    
+    pdb_ids: List[str]
+    alphafold_id: Optional[str]
     hierarchy_priority: str  # "PDB" or "AlphaFold"
 
 
@@ -49,52 +58,20 @@ class MetadataEngine:
     METHIONINE_MASS = 131.04049  # N-terminal Met mass
     
     def __init__(self):
-        """Initialize the metadata engine."""
         self.protein_library: Dict[str, ProteinMetadata] = {}
     
-    def calculate_theoretical_mass(self, sequence: str) -> Tuple[float, float]:
         """
-        Calculate theoretical mass of a protein sequence.
-        
-        Formula: m_th = Σ(Residue Masses) + 18.01056 Da
-        
-        Args:
-            sequence: Protein amino acid sequence (single letter code)
-            
-        Returns:
-            Tuple of (full_mass, mass_without_n_term_met)
+        Note: N-terminal Methionine Exopeptidase is an enzyme that often cleaves the 
+        starting Methionine if the second residue is small (like Alanine, Serine, or Glycine)
+        In a tissue slice, you don't know if the protein exists in its "Full" form or its "Met-cleaved" form
+        so to search for proteoforms, both masses are calculated and stored.
+        By checking both, you are effectively looking for two potential "Base Peaks."
         """
-        # Calculate sum of residue masses
-        total_mass = sum(self.AA_MASSES.get(aa, 0) for aa in sequence.upper())
-        
-        # Add water molecule
-        full_mass = total_mass + self.WATER_MASS
-        
-        # Calculate mass without N-terminal Met (if first residue is Met)
-        mass_no_met = full_mass
-        if sequence and sequence[0].upper() == 'M':
-            mass_no_met = full_mass - self.METHIONINE_MASS
-        
-        return full_mass, mass_no_met
-    
-    def fetch_uniprot_data(self, uniprot_id: str) -> Optional[Dict]:
-        """
-        Fetch protein data from UniProt database.
-        
-        TODO (Task T1): Implement UniProt API integration
-        - Query UniProt REST API
-        - Extract sequence, PDB cross-references
-        - Handle hierarchy logic (PDB > AlphaFold)
-        
-        Args:
-            uniprot_id: UniProt accession number
-            
-        Returns:
-            Dictionary with protein data or None if not found
-        """
-        # Placeholder implementation
-        # TODO: Implement actual UniProt API calls
-        return None
+    def calculate_mono_mass(self, sequence: str) -> Tuple[float, float]:
+        """Calculates monoisotopic mass and met-cleaved version."""
+        total = sum(self.AA_MASSES.get(aa, 0) for aa in sequence.upper()) + self.WATER_MASS
+        no_met = total - self.METHIONINE_MASS if sequence.startswith('M') else total
+        return total, no_met
     
     def fetch_pdb_references(self, uniprot_id: str) -> List[str]:
         """
@@ -131,38 +108,6 @@ class MetadataEngine:
         # Placeholder implementation
         return None
     
-    def add_protein(self, uniprot_id: str, sequence: str, 
-                   pdb_ids: List[str] = None, alphafold_id: str = None) -> ProteinMetadata:
-        """
-        Add a protein to the metadata library.
-        
-        Args:
-            uniprot_id: UniProt accession number
-            sequence: Protein amino acid sequence
-            pdb_ids: List of PDB structure IDs
-            alphafold_id: AlphaFold structure ID
-            
-        Returns:
-            ProteinMetadata object
-        """
-        full_mass, mass_no_met = self.calculate_theoretical_mass(sequence)
-        
-        # Determine hierarchy priority
-        hierarchy = "PDB" if pdb_ids else "AlphaFold" if alphafold_id else "None"
-        
-        metadata = ProteinMetadata(
-            uniprot_id=uniprot_id,
-            sequence=sequence,
-            theoretical_mass=full_mass,
-            theoretical_mass_no_met=mass_no_met,
-            pdb_ids=pdb_ids or [],
-            alphafold_id=alphafold_id,
-            hierarchy_priority=hierarchy
-        )
-        
-        self.protein_library[uniprot_id] = metadata
-        return metadata
-    
     def get_protein_metadata(self, uniprot_id: str) -> Optional[ProteinMetadata]:
         """
         Retrieve protein metadata from the library.
@@ -174,25 +119,151 @@ class MetadataEngine:
             ProteinMetadata object or None if not found
         """
         return self.protein_library.get(uniprot_id)
-    
-    def search_by_mass(self, observed_mass: float, ppm_tolerance: float = 50.0) -> List[ProteinMetadata]:
+
+    def fetch_proteome(self, taxonomy_id: int, size: int = 500):
         """
-        Search for proteins matching an observed mass within ppm tolerance.
-        
+        Generalized fetcher for any organism.
         Args:
-            observed_mass: Observed mass from MSI data
-            ppm_tolerance: Mass accuracy tolerance in parts per million
+            taxonomy_id: 10090 (Mouse), 9606 (Human), etc.
+            size: Number of reviewed proteins to fetch.
+        """
+        print(f"Fetching proteome for Taxonomy ID: {taxonomy_id}...")
+        
+        base_url = "https://rest.uniprot.org/uniprotkb/search"
+        # query: Reviewed only, specific taxonomy
+        # fields: mass (Avg), sequence, pdb, alphafold
+        params = {
+            "query": f"taxonomy_id:{taxonomy_id} AND reviewed:true",
+            "fields": "accession,id,protein_name,mass,sequence,xref_pdb,xref_alphafolddb,cc_mass_spectrometry",
+            "format": "json",
+            "size": size,
+        }
+
+        try:
+            response = requests.get(base_url, params=params)
+            response.raise_for_status()
+            data = response.json()
             
-        Returns:
-            List of matching ProteinMetadata objects
+            for entry in data.get('results', []):
+                uid = entry['primaryAccession']
+                entry_name = entry['uniProtkbId']
+                name = entry['proteinDescription']['recommendedName']['fullName']['value']
+                seq = entry['sequence']['value']
+                
+                # 1. Get Average Mass from UniProt
+                avg_f = float(entry['sequence']['molWeight'])
+                avg_no_m = avg_f - self.METHIONINE_MASS if seq.startswith('M') else avg_f
+                
+                # 2. Calculate Monoisotopic Mass
+                mono_f, mono_no_m = self.calculate_mono_mass(seq)
+                
+                # 3. Extract Structure IDs
+                xrefs = entry.get('uniProtKBCrossReferences', [])
+                pdbs = [x['id'] for x in xrefs if x['database'] == 'PDB']
+                af_id = next((x['id'] for x in xrefs if x['database'] == 'AlphaFoldDB'), None)
+                
+                hierarchy = "PDB" if pdbs else "AlphaFold" if af_id else "None"
+
+                metadata = ProteinMetadata(
+                    uniprot_id=uid,
+                    entry_name=entry_name,
+                    protein_name=name,
+                    sequence=seq,
+                    mono_mass=mono_f,
+                    mono_mass_no_met=mono_no_m,
+                    avg_mass=avg_f,
+                    avg_mass_no_met=avg_no_m,
+                    pdb_ids=pdbs,
+                    alphafold_id=af_id,
+                    hierarchy_priority=hierarchy
+                )
+                self.protein_library[uid] = metadata
+
+            print(f"Library built with {len(self.protein_library)} proteins.")
+
+        except Exception as e:
+            print(f"Error fetching data: {e}")
+
+    def search_by_mass(self, observed_mass: float, ppm_tolerance: float = 50.0) -> List[Dict]:
+        """
+        Searches all 4 mass states (Mono/Avg x Full/Met-Cleaved).
+        Returns a list of dictionaries with hit details.
         """
         matches = []
-        for metadata in self.protein_library.values():
-            # Check both masses (with and without N-terminal Met)
-            for mass in [metadata.theoretical_mass, metadata.theoretical_mass_no_met]:
-                ppm_error = abs(observed_mass - mass) / mass * 1e6
-                if ppm_error <= ppm_tolerance:
-                    matches.append(metadata)
-                    break
+        for p in self.protein_library.values():
+            # Check 4 potential base states
+            states = [
+                (p.mono_mass, "Monoisotopic", "Full"),
+                (p.mono_mass_no_met, "Monoisotopic", "Met-Cleaved"),
+                (p.avg_mass, "Average", "Full"),
+                (p.avg_mass_no_met, "Average", "Met-Cleaved")
+            ]
+            
+            for th_mass, m_type, m_state in states:
+                error = abs(observed_mass - th_mass) / th_mass * 1e6
+                if error <= ppm_tolerance:
+                    matches.append({
+                        "metadata": p,
+                        "type": m_type,
+                        "state": m_state,
+                        "ppm_error": round(error, 2)
+                    })
         return matches
 
+# Example Usage:
+engine = MetadataEngine()
+engine.fetch_proteome(10090) # Mouse
+hits = engine.search_by_mass(8565.0, ppm_tolerance=20.0) # Search for Ubiquitin
+
+import pandas as pd
+from dataclasses import asdict
+
+def export_library_to_excel(engine, filename="SPARTA_Metadata_Sanity_Check.xlsx"):
+    """
+    Converts the Protein Library into a DataFrame and exports to Excel.
+    
+    Processing:
+    - Flattens PDB ID lists into comma-separated strings.
+    - Simplifies MS Comments for spreadsheet readability.
+    """
+    if not engine.protein_library:
+        print("Error: Library is empty. Fetch data before exporting.")
+        return
+
+    # 1. Convert the dictionary of dataclasses into a list of dictionaries
+    raw_data = []
+    for uid, metadata in engine.protein_library.items():
+        # Convert dataclass to dict
+        entry_dict = asdict(metadata)
+        
+        # 2. Format lists for Excel (Excel cells don't handle Python lists well)
+        entry_dict['pdb_ids'] = ", ".join(entry_dict['pdb_ids'])
+        
+        # 3. Handle MS Comments (if they exist)
+        if entry_dict.get('ms_comments'):
+            formatted_comments = []
+            for c in entry_dict['ms_comments']:
+                mass = c.get('experimental_mass', 'N/A')
+                note = c.get('note', 'No note')
+                formatted_comments.append(f"[{mass} Da: {note}]")
+            entry_dict['ms_comments'] = "; ".join(formatted_comments)
+        else:
+            entry_dict['ms_comments'] = "No Experimental Evidence"
+            
+        raw_data.append(entry_dict)
+
+    # 4. Create DataFrame
+    df = pd.DataFrame(raw_data)
+
+    # 5. Reorder columns for easier "Sanity Checking"
+    cols = [
+        'uniprot_id', 'entry_name', 'protein_name', 
+        'mono_mass', 'mono_mass_no_met', 
+        'avg_mass', 'avg_mass_no_met',
+        'hierarchy_priority', 'pdb_ids', 'alphafold_id', 'ms_comments'
+    ]
+    df = df[cols]
+
+    # 6. Export
+    df.to_excel(filename, index=False)
+    print(f"✅ Sanity check file generated: {filename}")
