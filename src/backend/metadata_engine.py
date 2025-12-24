@@ -204,8 +204,8 @@ class MetadataEngine:
 
 
 # # Example Usage:
-# engine = MetadataEngine()
+engine = MetadataEngine()
 # engine.fetch_proteome(10090) # Mouse
 # engine.export_library_to_excel()
-# hits = engine.search_by_mass(8565.0, ppm_tolerance=20.0) # Search for Ubiquitin
+# hits = engine.search_by_mass(257620.0, ppm_tolerance=20.0) # Search for Ubiquitin
 # print(hits)
