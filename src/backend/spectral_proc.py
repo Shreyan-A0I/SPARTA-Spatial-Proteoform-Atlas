@@ -1,11 +1,13 @@
 """
-Spectral Pipeline (Phase B: The Evidence)
+Spectral Pipeline
 ===========================================
 Denoises raw MSI data and normalizes across the tissue slice.
 
 Key Functions:
 - TIC Normalization
 - Peak Picking (Centroiding) with S/N threshold
+- Mass Consensus: Aggregates peaks across pixels to identify significant features
+- Excel Export: Generates a detailed report of the spectral analysis
 """
 
 import numpy as np
