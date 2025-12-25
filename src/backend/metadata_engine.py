@@ -56,6 +56,7 @@ class MetadataEngine:
     
     WATER_MASS = 18.01056  # H2O mass
     METHIONINE_MASS = 131.04049  # N-terminal Met mass
+    AVG_METHIONINE_MASS = 131.1926
     
     def __init__(self):
         self.protein_library: Dict[str, ProteinMetadata] = {}
@@ -105,7 +106,7 @@ class MetadataEngine:
                 
                 # 1. Get Average Mass from UniProt
                 avg_f = float(entry['sequence']['molWeight'])
-                avg_no_m = avg_f - self.METHIONINE_MASS if seq.startswith('M') else avg_f
+                avg_no_m = avg_f - self.AVG_METHIONINE_MASS if seq.startswith('M') else avg_f
                 
                 # 2. Calculate Monoisotopic Mass
                 mono_f, mono_no_m = self.calculate_mono_mass(seq)
