@@ -137,32 +137,6 @@ class MetadataEngine:
         except Exception as e:
             print(f"Error fetching data: {e}")
 
-    def search_by_mass(self, observed_mass: float, ppm_tolerance: float = 50.0) -> List[Dict]:
-        """
-        Searches all 4 mass states (Mono/Avg x Full/Met-Cleaved).
-        Returns a list of dictionaries with hit details.
-        """
-        matches = []
-        for p in self.protein_library.values():
-            # Check 4 potential base states
-            states = [
-                (p.mono_mass, "Monoisotopic", "Full"),
-                (p.mono_mass_no_met, "Monoisotopic", "Met-Cleaved"),
-                (p.avg_mass, "Average", "Full"),
-                (p.avg_mass_no_met, "Average", "Met-Cleaved")
-            ]
-            
-            for th_mass, m_type, m_state in states:
-                error = abs(observed_mass - th_mass) / th_mass * 1e6
-                if error <= ppm_tolerance:
-                    matches.append({
-                        "metadata": p,
-                        "type": m_type,
-                        "state": m_state,
-                        "ppm_error": round(error, 2)
-                    })
-        return matches
-
     def export_library_to_excel(engine, filename="SPARTA_Metadata_Sanity_Check.xlsx"):
         """
         Converts the Protein Library into a DataFrame and exports to Excel.
@@ -204,7 +178,7 @@ class MetadataEngine:
 
 
 # # Example Usage:
-engine = MetadataEngine()
+# engine = MetadataEngine()
 # engine.fetch_proteome(10090) # Mouse
 # engine.export_library_to_excel()
 # hits = engine.search_by_mass(257620.0, ppm_tolerance=20.0) # Search for Ubiquitin
